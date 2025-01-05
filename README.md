@@ -14,19 +14,14 @@ A GUI tool for managing Python packages using pip.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/pip-manager-gui.git
-   cd pip-manager-gui
+   pip install pipmanagergui
    ```
 
-2. Install dependencies:
+2. Run it on terminal:
    ```bash
-   pip install requests
+   pipmanager
    ```
-
-3. Run the application:
-   ```bash
-   python app.py
-   ```
+If any errors occur you can download the wheel manually [here](dist/pipmanagergui-0.1.1-py3-none-any.whl)
 
 ## Usage
 

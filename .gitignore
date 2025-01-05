@@ -1,1 +1,4 @@
-*.ignore.*
+*.ignore*
+__pycache__
+*.ignore
+*.egg-info
