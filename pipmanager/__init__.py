@@ -1,11 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import subprocess
-import sys
-import threading
-import json
+import sys, os, threading, subprocess, requests
 from importlib.metadata import distributions
-import requests
+from datetime import datetime
+from importlib.util import find_spec
 
 class PipManagerApp:
     def __init__(self, root):
@@ -114,22 +112,25 @@ class PipManagerApp:
         if not query:
             self.load_packages()
             return
-        
+
         self.status_var.set(f"Searching installed packages for '{query}'...")
         self.tree.delete(*self.tree.get_children())
-        
+
         def search():
             try:
                 for dist in distributions():
-                    package_name = dist.metadata['Name']
-                    if query in package_name.lower():
-                        version = dist.version
-                        size = self.get_package_size(package_name)
-                        self.tree.insert("", tk.END, values=(package_name, version, size, "Update | Uninstall"))
+                    try:
+                        package_name = dist.metadata.get("Name", "Unknown Package")
+                        if query in package_name.lower():
+                            version = dist.version
+                            size = self.get_package_size(package_name)
+                            self.tree.insert("", tk.END, values=(package_name, version, size, "Update | Uninstall"))
+                    except Exception as pkg_error:
+                        print(f"Error processing package {dist}: {pkg_error}")
                 self.status_var.set("Search complete.")
             except Exception as e:
                 self.status_var.set(f"Error during search: {str(e)}")
-        
+
         thread = threading.Thread(target=search)
         thread.daemon = True
         thread.start()
@@ -158,7 +159,7 @@ class PipManagerApp:
         # Create a new window
         child_window = tk.Toplevel(self.root)
         child_window.title(f"Manage Package: {package_name}")
-        child_window.geometry("300x175")
+        child_window.geometry("330x250")
         child_window.transient(self.root)  # Set as a child window
 
         child_window.after(10, lambda: child_window.grab_set())
@@ -167,10 +168,23 @@ class PipManagerApp:
         label = ttk.Label(
             child_window,
             text=f"What would you like to do with '{package_name}'?",
-            wraplength=300,
+            wraplength=330,
         )
         label.pack(pady=10, padx=10)
-
+        # Create another label for installation date
+        label1 = ttk.Label(
+            child_window,
+            text=f"Installation Date: {self.get_installation_date(package_name)}",
+            wraplength=340,
+        )
+        label1.pack(pady=10, padx=10)
+         # Create More info button
+        info_button = ttk.Button(
+            child_window,
+            text="Display Info",
+            command=lambda: [display_package_info(package_name), child_window.destroy()]
+        )
+        info_button.pack(fill=tk.X, padx=20, pady=5)
         # Create Update button
         update_button = ttk.Button(
             child_window,
@@ -194,6 +208,18 @@ class PipManagerApp:
             command=child_window.destroy
         )
         cancel_button.pack(fill=tk.X, padx=20, pady=5)
+     
+        def display_package_info(package_name):
+        
+            try:
+                result = subprocess.run([sys.executable, "-m", "pip", "show", package_name], capture_output=True, text=True)
+                if result.returncode == 0:
+                    child_window.lower()
+                    messagebox.showinfo(f"Details of {package_name}",result.stdout)
+                else:
+                    messagebox.showerror("Error", f"Failed to retrieve info for {package_name}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Error fetching package info: {str(e)}")
 
     def update_package(self, package_name):
         self.status_var.set(f"Updating {package_name}...")
@@ -239,10 +265,11 @@ class PipManagerApp:
         def search():
             try:
                 response = requests.get(f"https://pypi.org/pypi/{query}/json")
+
                 if response.status_code == 200:
                     data = response.json()
                     if messagebox.askyesno("Package Found",
-                                         f"Would you like to install {query} {data['info']['version']}?"):
+                                         f"Would you like to install {query} {data['info']['version']}?\nAuthor: {data['info']['author']}"):
                         self.install_package(query)
                 else:
                     messagebox.showinfo("Not Found", f"Package '{query}' not found on PyPI")
@@ -270,6 +297,25 @@ class PipManagerApp:
         thread = threading.Thread(target=install)
         thread.daemon = True
         thread.start()
+    # Return Installation date of packages
+    def get_installation_date(self,package_name):
+
+        try:
+            # Locate the package directory
+            spec = find_spec(package_name)
+            if not spec or not spec.origin:
+                return "null"
+            
+            # Get the directory path of the package
+            package_dir = os.path.dirname(spec.origin)
+            
+            # Get the modification time of the package directory
+            timestamp = os.path.getmtime(package_dir)
+            install_date = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            return install_date
+        except Exception as e:
+            return f"Error retrieving installation date: {e}"
+
 
 if __name__ == "__main__":
     root = tk.Tk()
