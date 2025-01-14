@@ -1,6 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-import sys, os, threading, subprocess, requests
+from tkinter import ttk, messagebox, simpledialog
+import sys, os, threading, subprocess, requests,time
 from importlib.metadata import distributions
 from datetime import datetime
 from importlib.util import find_spec
@@ -11,6 +11,8 @@ class PipManagerApp:
         self.root.title("Pip Package Manager")
         self.root.geometry("800x600")
         
+        #Threading flag
+        self.stop_loading_flag = threading.Event()
         # Create main frame
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -56,6 +58,21 @@ class PipManagerApp:
         
         # Bind double-click event
         self.tree.bind("<Double-1>", self.on_tree_item_double_click)
+        # Bottom buttons frame
+        self.bottom_frame = ttk.Frame(self.main_frame)
+        self.bottom_frame.pack(fill=tk.X, pady=(5, 5))
+        
+        # Update All button
+        self.update_all_button = ttk.Button(self.bottom_frame, text="Update All", command=self.update_all_packages)
+        self.update_all_button.pack(side=tk.LEFT, padx=5)
+        
+        # Install requirements.txt button
+        self.install_req_button = ttk.Button(self.bottom_frame, text="Install requirements.txt", command=self.install_requirements)
+        self.install_req_button.pack(side=tk.LEFT, padx=5)
+        
+        # Install from GitHub button
+        self.install_github_button = ttk.Button(self.bottom_frame, text="Install from GitHub", command=self.install_from_github)
+        self.install_github_button.pack(side=tk.LEFT, padx=5)
         
         # Status bar
         self.status_var = tk.StringVar()
@@ -82,58 +99,67 @@ class PipManagerApp:
     def load_packages(self):
         self.status_var.set("Loading packages...")
         self.tree.delete(*self.tree.get_children())
-        
+
+        # Clear the stop flag before starting a new load
+        self.stop_loading_flag.clear()
+
         def load():
             try:
                 for dist in distributions():
+                    if self.stop_loading_flag.is_set():
+                        self.status_var.set("Loading stopped.")
+                        self.tree.delete(*self.tree.get_children())
+                        break  # Exit the loop if the stop flag is set
+
                     try:
                         package_name = dist.metadata['Name']
                         version = dist.version
                         size = self.get_package_size(package_name)
-                        
-                        # Insert package info into treeview with a placeholder for "Actions"
+
+                        # Insert package info into the treeview
                         self.tree.insert("", tk.END, values=(package_name, version, size, "Update | Uninstall"))
-                        
+
                     except Exception as pkg_error:
-                        # Skip packages that cause errors during metadata retrieval
                         print(f"Error processing package {dist}: {pkg_error}")
                         continue
                 
                 self.status_var.set("Ready")
             except Exception as e:
                 self.status_var.set(f"Error loading packages: {str(e)}")
-        
+
         thread = threading.Thread(target=load)
         thread.daemon = True
         thread.start()
-
     def search_local_packages(self):
-        query = self.search_var.get().strip().lower()
-        if not query:
-            self.load_packages()
-            return
+            query = self.search_var.get().strip().lower()
+            if not query:
+                self.load_packages()  # If no query, reload all packages
+                return
+            time.sleep(0.5)
+            # Stop any ongoing loading process
+            self.stop_loading_flag.set()
+            self.status_var.set(f"Searching installed packages for '{query}'...")
+            self.tree.delete(*self.tree.get_children())
 
-        self.status_var.set(f"Searching installed packages for '{query}'...")
-        self.tree.delete(*self.tree.get_children())
+            def search():
+                try:
+                    for dist in distributions():
+                        try:
+                            package_name = dist.metadata.get("Name", "Unknown Package")
+                            if query in package_name.lower():
+                                version = dist.version
+                                size = self.get_package_size(package_name)
+                                self.tree.insert("", tk.END, values=(package_name, version, size, "Update | Uninstall"))
+                        except Exception as pkg_error:
+                            print(f"Error processing package {dist}: {pkg_error}")
+                    self.status_var.set("Search complete.")
+                except Exception as e:
+                    self.status_var.set(f"Error during search: {str(e)}")
 
-        def search():
-            try:
-                for dist in distributions():
-                    try:
-                        package_name = dist.metadata.get("Name", "Unknown Package")
-                        if query in package_name.lower():
-                            version = dist.version
-                            size = self.get_package_size(package_name)
-                            self.tree.insert("", tk.END, values=(package_name, version, size, "Update | Uninstall"))
-                    except Exception as pkg_error:
-                        print(f"Error processing package {dist}: {pkg_error}")
-                self.status_var.set("Search complete.")
-            except Exception as e:
-                self.status_var.set(f"Error during search: {str(e)}")
+            thread = threading.Thread(target=search)
+            thread.daemon = True
+            thread.start()
 
-        thread = threading.Thread(target=search)
-        thread.daemon = True
-        thread.start()
 
     def sort_by_column(self, col):
         data = [(self.tree.set(child, col), child) for child in self.tree.get_children("")]
@@ -269,7 +295,7 @@ class PipManagerApp:
                 if response.status_code == 200:
                     data = response.json()
                     if messagebox.askyesno("Package Found",
-                                         f"Would you like to install {query} {data['info']['version']}?\nAuthor: {data['info']['author']}"):
+                                         f"Would you like to install {query} {data['info']['version']}?\nAuthor: {data['info']['author']}\n"):
                         self.install_package(query)
                 else:
                     messagebox.showinfo("Not Found", f"Package '{query}' not found on PyPI")
@@ -315,9 +341,73 @@ class PipManagerApp:
             return install_date
         except Exception as e:
             return f"Error retrieving installation date: {e}"
+    def update_all_packages(self):
+        self.status_var.set("Updating all packages...")
+        
+        def update():
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "list", "--outdated", "--format=json"])
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+                self.status_var.set("Successfully updated all packages")
+                self.load_packages()
+            except subprocess.CalledProcessError as e:
+                self.status_var.set(f"Error updating packages: {str(e)}")
+                messagebox.showerror("Error", "Failed to update packages")
+        
+        thread = threading.Thread(target=update)
+        thread.daemon = True
+        thread.start()
+
+    def install_requirements(self):
+        from tkinter import filedialog
+        
+        file_path = filedialog.askopenfilename(
+            title="Select requirements.txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            self.status_var.set("Installing from requirements.txt...")
+            
+            def install():
+                try:
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", file_path])
+                    self.status_var.set("Successfully installed packages from requirements.txt")
+                    self.load_packages()
+                except subprocess.CalledProcessError as e:
+                    self.status_var.set(f"Error installing packages: {str(e)}")
+                    messagebox.showerror("Error", "Failed to install packages from requirements.txt")
+            
+            thread = threading.Thread(target=install)
+            thread.daemon = True
+            thread.start()
+
+    def install_from_github(self):
+        repo_url = simpledialog.askstring("GitHub Repository", 
+            "Enter GitHub repository URL\n(format: username/repository):")
+        
+        if repo_url:
+            self.status_var.set(f"Installing from GitHub: {repo_url}...")
+            
+            def install():
+                try:
+                    if("https://github.com" in repo_url):
+                        subprocess.check_call([sys.executable, "-m", "pip", "install", f"git+{repo_url}"])
+                    else:
+                        subprocess.check_call([sys.executable, "-m", "pip", "install", f"git+https://github.com/{repo_url}.git"])
+                    self.status_var.set("Successfully installed package from GitHub")
+                    self.load_packages()
+                except subprocess.CalledProcessError as e:
+                    self.status_var.set(f"Error installing package: {str(e)}")
+                    messagebox.showerror("Error", "Failed to install package from GitHub")
+            
+            thread = threading.Thread(target=install)
+            thread.daemon = True
+            thread.start()
 
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = PipManagerApp(root)
+    
     root.mainloop()

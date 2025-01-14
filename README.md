@@ -10,6 +10,8 @@ A GUI tool for managing Python packages using pip.
 - Sort packages by name or size.
 - Update or uninstall packages through a child window.
 - Display information about packages
+- Install from GitHub repositories
+- Install from requirements.txt
 
 ## Installation
 
@@ -46,7 +48,11 @@ If any errors occur you can download the wheel manually [here](dist/pipmanagergu
 - Fixed search function.
 - Added installation date to double click menu.
 - When searching for a pypi package author name is displayed
-
+### 0.2.0 (2025-01-14)
+- Resolved an issue regarding local search
+- Added install from requirements.txt
+- Added install from GitHub repository
+- Added Update all button
 ## License
 
 MIT License

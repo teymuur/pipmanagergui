@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pipmanagergui",
-    version="0.1.2",
+    version="0.2.0",
     description="A GUI for managing Python packages",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
